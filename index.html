@@ -4,223 +4,226 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Kompas Kiblat</title>
-<meta name="theme-color" content="#0f172a">
-
 <style>
-body{
-    margin:0;
-    overflow:hidden;
-    background:#020617;
-    font-family:system-ui;
-    color:white;
+body{margin:0;overflow:hidden;background:#000;color:white;font-family:system-ui;}
+#ui{
+position:absolute;
+bottom:15px;
+left:50%;
+transform:translateX(-50%);
+background:rgba(0,0,0,0.6);
+padding:12px 18px;
+border-radius:15px;
+font-size:13px;
+text-align:center;
+backdrop-filter:blur(10px);
 }
-#info{
-    position:absolute;
-    bottom:15px;
-    left:50%;
-    transform:translateX(-50%);
-    background:rgba(0,0,0,0.6);
-    padding:12px 18px;
-    border-radius:15px;
-    font-size:13px;
-    text-align:center;
-    backdrop-filter:blur(10px);
+button{
+margin-top:6px;
+padding:6px 12px;
+border:none;
+border-radius:10px;
+background:#facc15;
+font-weight:bold;
 }
 </style>
 </head>
 <body>
 
-<div id="info">
-📍 <span id="coord">Mendeteksi lokasi...</span><br>
+<div id="ui">
+📍 <span id="coord">Mendeteksi...</span><br>
 📐 Kiblat: <span id="degree">-</span>° |
 Selisih: <span id="diff">-</span>°<br>
-🌍 Jarak: <span id="distance">-</span> km
+🌍 Jarak: <span id="distance">-</span> km<br>
+<button onclick="toggleMode()">Mode Siang/Malam</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/loaders/FontLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/geometries/TextGeometry.js"></script>
 
 <script>
-/* ============================
-   BASIC SCENE SETUP
-============================ */
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x020617);
+/* ================= BASIC SETUP ================= */
+const scene=new THREE.Scene();
+let isNight=true;
 
-const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
-camera.position.set(0,6,10);
+const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,0.1,1000);
+camera.position.set(0,6,12);
 
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.shadowMap.enabled=true;
 document.body.appendChild(renderer.domElement);
 
-/* ============================
-   LIGHTING REALISTIS
-============================ */
-const ambient = new THREE.AmbientLight(0xffffff,0.4);
+/* ================= HDR REFLECTION ================= */
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new THREE.Scene(),0.04).texture;
+
+/* ================= LIGHTING ================= */
+const ambient=new THREE.AmbientLight(0xffffff,0.4);
 scene.add(ambient);
 
-const dirLight = new THREE.DirectionalLight(0xffffff,1);
-dirLight.position.set(5,10,7);
-dirLight.castShadow = true;
-scene.add(dirLight);
+const movingLight=new THREE.PointLight(0xffffff,1,100);
+movingLight.position.set(5,8,5);
+movingLight.castShadow=true;
+scene.add(movingLight);
 
-/* ============================
-   COMPASS BASE (METAL)
-============================ */
-const baseGeo = new THREE.CylinderGeometry(5,5,0.8,64);
-const baseMat = new THREE.MeshStandardMaterial({
-    color:0x1e293b,
-    metalness:0.9,
-    roughness:0.3
-});
-const base = new THREE.Mesh(baseGeo,baseMat);
-base.receiveShadow = true;
+/* ================= COMPASS BASE ================= */
+const base=new THREE.Mesh(
+new THREE.CylinderGeometry(5,5,0.8,64),
+new THREE.MeshStandardMaterial({
+color:0x1e293b,
+metalness:1,
+roughness:0.2
+})
+);
+base.receiveShadow=true;
 scene.add(base);
 
-/* ============================
-   NEEDLE 3D
-============================ */
-const needleGroup = new THREE.Group();
+/* ================= NEEDLE ================= */
+const needleGroup=new THREE.Group();
 
-const redMat = new THREE.MeshStandardMaterial({color:0xff0000, metalness:0.8, roughness:0.2});
-const whiteMat = new THREE.MeshStandardMaterial({color:0xffffff, metalness:0.7, roughness:0.3});
-
-const redNeedle = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3,0.3,4),
-    redMat
+const red=new THREE.Mesh(
+new THREE.BoxGeometry(0.3,0.3,4),
+new THREE.MeshStandardMaterial({color:0xff0000,metalness:1,roughness:0.2})
 );
-redNeedle.position.z = -2;
+red.position.z=-2;
 
-const whiteNeedle = new THREE.Mesh(
-    new THREE.BoxGeometry(0.3,0.3,4),
-    whiteMat
+const white=new THREE.Mesh(
+new THREE.BoxGeometry(0.3,0.3,4),
+new THREE.MeshStandardMaterial({color:0xffffff,metalness:1,roughness:0.3})
 );
-whiteNeedle.position.z = 2;
+white.position.z=2;
 
-needleGroup.add(redNeedle);
-needleGroup.add(whiteNeedle);
+needleGroup.add(red);
+needleGroup.add(white);
 
-/* ============================
-   KA'BAH 3D
-============================ */
-const kabahMat = new THREE.MeshStandardMaterial({
-    color:0x000000,
-    metalness:0.3,
-    roughness:0.8
-});
-const kabah = new THREE.Mesh(
-    new THREE.BoxGeometry(0.8,0.8,0.8),
-    kabahMat
+/* ================= KA'BAH GLOW ================= */
+const kabah=new THREE.Mesh(
+new THREE.BoxGeometry(1,1,1),
+new THREE.MeshStandardMaterial({color:0x000000})
 );
-kabah.position.z = -4.5;
+kabah.position.z=-4.5;
+
+const glow=new THREE.Mesh(
+new THREE.SphereGeometry(1.4,32,32),
+new THREE.MeshBasicMaterial({color:0xffd700,transparent:true,opacity:0.2})
+);
+glow.position.copy(kabah.position);
+
 needleGroup.add(kabah);
-
+needleGroup.add(glow);
 scene.add(needleGroup);
 
-/* ============================
-   GLOBE
-============================ */
-const globe = new THREE.Mesh(
-    new THREE.SphereGeometry(1.2,32,32),
-    new THREE.MeshStandardMaterial({
-        color:0x2563eb,
-        metalness:0.4,
-        roughness:0.6
-    })
+/* ================= GLOBE ================= */
+const globe=new THREE.Mesh(
+new THREE.SphereGeometry(1.2,32,32),
+new THREE.MeshStandardMaterial({color:0x2563eb,metalness:0.5,roughness:0.5})
 );
 globe.position.set(0,3,-3);
 scene.add(globe);
 
-/* ============================
-   QIBLA LOGIC
-============================ */
+/* ================= TEXT N E S W ================= */
+const loader=new THREE.FontLoader();
+loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json',font=>{
+const letters=['N','E','S','W'];
+const positions=[[0,0,-4.5],[4.5,0,0],[0,0,4.5],[-4.5,0,0]];
+letters.forEach((l,i)=>{
+const mesh=new THREE.Mesh(
+new THREE.TextGeometry(l,{font,size:0.8,height:0.2}),
+new THREE.MeshStandardMaterial({color:0xffffff,metalness:1,roughness:0.3})
+);
+mesh.position.set(positions[i][0],0.6,positions[i][2]);
+mesh.rotation.x=-Math.PI/2;
+scene.add(mesh);
+});
+});
+
+/* ================= QIBLA LOGIC ================= */
 const KAABA_LAT=21.4225;
 const KAABA_LON=39.8262;
-
-let heading=0;
-let qibla=0;
-let smoothRot=0;
+let heading=0,qibla=0,smoothRot=0,offset=0;
 
 function toRad(d){return d*Math.PI/180;}
 function toDeg(r){return r*180/Math.PI;}
 
 function getDistance(lat1,lon1,lat2,lon2){
- const R=6371;
- const dLat=toRad(lat2-lat1);
- const dLon=toRad(lon2-lon1);
- const a=Math.sin(dLat/2)**2+
- Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
- Math.sin(dLon/2)**2;
- return (R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
+const R=6371;
+const dLat=toRad(lat2-lat1);
+const dLon=toRad(lon2-lon1);
+const a=Math.sin(dLat/2)**2+
+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
+Math.sin(dLon/2)**2;
+return (R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 
 function getQibla(lat,lon){
- const dLon=toRad(KAABA_LON-lon);
- const y=Math.sin(dLon);
- const x=Math.cos(toRad(lat))*Math.tan(toRad(KAABA_LAT))
- -Math.sin(toRad(lat))*Math.cos(dLon);
- return (toDeg(Math.atan2(y,x))+360)%360;
+const dLon=toRad(KAABA_LON-lon);
+const y=Math.sin(dLon);
+const x=Math.cos(toRad(lat))*Math.tan(toRad(KAABA_LAT))
+-Math.sin(toRad(lat))*Math.cos(dLon);
+return (toDeg(Math.atan2(y,x))+360)%360;
 }
 
-/* ============================
-   GPS
-============================ */
+/* ================= GPS ================= */
 navigator.geolocation.getCurrentPosition(pos=>{
- let lat=pos.coords.latitude;
- let lon=pos.coords.longitude;
-
- document.getElementById("coord").textContent=
- lat.toFixed(5)+", "+lon.toFixed(5);
-
- qibla=getQibla(lat,lon);
- document.getElementById("degree").textContent=
- qibla.toFixed(2);
-
- let dist=getDistance(lat,lon,KAABA_LAT,KAABA_LON);
- document.getElementById("distance").textContent=
- dist.toFixed(1);
-
+let lat=pos.coords.latitude;
+let lon=pos.coords.longitude;
+document.getElementById("coord").textContent=
+lat.toFixed(5)+", "+lon.toFixed(5);
+qibla=getQibla(lat,lon);
+document.getElementById("degree").textContent=qibla.toFixed(2);
+document.getElementById("distance").textContent=
+getDistance(lat,lon,KAABA_LAT,KAABA_LON).toFixed(1);
 });
 
-/* ============================
-   SENSOR
-============================ */
+/* ================= SENSOR ================= */
 window.addEventListener("deviceorientation",e=>{
- if(e.webkitCompassHeading){
- heading=e.webkitCompassHeading;
- }else{
- heading=360-e.alpha;
- }
+if(e.webkitCompassHeading) heading=e.webkitCompassHeading+offset;
+else heading=360-e.alpha+offset;
 });
 
-/* ============================
-   ANIMATION LOOP
-============================ */
+/* ================= AUTO CALIBRATION ================= */
+let samples=[];
+setInterval(()=>{
+samples.push(heading);
+if(samples.length>30){
+let avg=samples.reduce((a,b)=>a+b)/samples.length;
+offset=-avg+heading;
+samples=[];
+}
+},500);
+
+/* ================= MODE TOGGLE ================= */
+function toggleMode(){
+isNight=!isNight;
+scene.background=new THREE.Color(isNight?0x000000:0x87ceeb);
+}
+
+/* ================= ANIMATION ================= */
 function animate(){
- requestAnimationFrame(animate);
+requestAnimationFrame(animate);
 
- let target=(qibla-heading);
- smoothRot+= (target-smoothRot)*0.05;
+movingLight.position.x=Math.sin(Date.now()*0.001)*8;
 
- needleGroup.rotation.y=toRad(smoothRot);
+let target=(qibla-heading);
+smoothRot+=(target-smoothRot)*0.05;
 
- globe.rotation.y+=0.003;
+needleGroup.rotation.y=toRad(smoothRot);
 
- document.getElementById("diff").textContent=
- Math.abs(target).toFixed(1);
+globe.rotation.y+=0.003;
 
- renderer.render(scene,camera);
+document.getElementById("diff").textContent=
+Math.abs(target).toFixed(1);
+
+renderer.render(scene,camera);
 }
 animate();
 
-/* ============================
-   RESPONSIVE
-============================ */
 window.addEventListener("resize",()=>{
- camera.aspect=innerWidth/innerHeight;
- camera.updateProjectionMatrix();
- renderer.setSize(innerWidth,innerHeight);
+camera.aspect=innerWidth/innerHeight;
+camera.updateProjectionMatrix();
+renderer.setSize(innerWidth,innerHeight);
 });
 </script>
 
