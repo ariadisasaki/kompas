@@ -3,291 +3,225 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Kompas Kiblat 3D Premium</title>
-
-<link rel="manifest" href="manifest.json">
+<title>Kompas Kiblat</title>
 <meta name="theme-color" content="#0f172a">
 
 <style>
 body{
     margin:0;
-    background:radial-gradient(circle at top,#0f172a,#020617);
-    color:white;
+    overflow:hidden;
+    background:#020617;
     font-family:system-ui;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
+    color:white;
 }
-
-#compass{
-    width:340px;
-    height:340px;
-    margin-top:30px;
-    position:relative;
-    perspective:1000px;
-}
-
-.disk{
-    width:100%;
-    height:100%;
-    border-radius:50%;
-    background:linear-gradient(145deg,#1e293b,#0f172a);
-    box-shadow:
-        inset 0 0 40px rgba(255,255,255,0.05),
-        0 20px 40px rgba(0,0,0,0.6);
+#info{
     position:absolute;
-}
-
-.cardinal{
-    position:absolute;
-    font-weight:bold;
-    font-size:28px;
-    text-shadow:0 3px 6px black;
-}
-
-.N{top:10px;left:50%;transform:translateX(-50%);}
-.S{bottom:10px;left:50%;transform:translateX(-50%);}
-.E{right:10px;top:50%;transform:translateY(-50%);}
-.W{left:10px;top:50%;transform:translateY(-50%);}
-
-#needle{
-    width:6px;
-    height:160px;
-    position:absolute;
-    top:50%;
-    left:50%;
-    transform-origin:50% 100%;
-    transform:translate(-50%,-100%) rotate(0deg);
-    transition:transform 0.1s linear;
-}
-
-.red{
-    background:linear-gradient(to top,#b91c1c,#ef4444);
-    height:50%;
-}
-
-.white{
-    background:linear-gradient(to bottom,#ffffff,#cbd5e1);
-    height:50%;
-}
-
-.kabah{
-    width:18px;
-    height:18px;
-    background:black;
-    border:2px solid gold;
-    position:absolute;
-    top:-10px;
+    bottom:15px;
     left:50%;
     transform:translateX(-50%);
-    box-shadow:0 0 10px gold;
-}
-
-.info{
-    margin-top:25px;
+    background:rgba(0,0,0,0.6);
+    padding:12px 18px;
+    border-radius:15px;
+    font-size:13px;
     text-align:center;
-    font-size:14px;
-    line-height:1.6;
-    opacity:0.9;
-}
-
-.globe{
-    width:60px;
-    height:60px;
-    border-radius:50%;
-    background:radial-gradient(circle at 30% 30%,#3b82f6,#0ea5e9,#1e3a8a);
-    margin-top:15px;
-    box-shadow:0 0 15px #0ea5e9;
-}
-button{
-    margin-top:15px;
-    padding:10px 18px;
-    border:none;
-    border-radius:20px;
-    background:#22c55e;
-    color:black;
-    font-weight:bold;
+    backdrop-filter:blur(10px);
 }
 </style>
 </head>
 <body>
 
-<h2>🕋 Kompas Kiblat 3D</h2>
-
-<div id="compass">
-    <div class="disk"></div>
-    <div class="cardinal N">N</div>
-    <div class="cardinal E">E</div>
-    <div class="cardinal S">S</div>
-    <div class="cardinal W">W</div>
-
-    <div id="needle">
-        <div class="red"></div>
-        <div class="white"></div>
-        <div class="kabah"></div>
-    </div>
+<div id="info">
+📍 <span id="coord">Mendeteksi lokasi...</span><br>
+📐 Kiblat: <span id="degree">-</span>° |
+Selisih: <span id="diff">-</span>°<br>
+🌍 Jarak: <span id="distance">-</span> km
 </div>
 
-<div class="info">
-    📍 Koordinat: <span id="coord">-</span><br>
-    📐 Derajat Kiblat: <span id="degree">-</span>°<br>
-    🧭 Selisih Sudut: <span id="diff">-</span>°<br>
-    🌍 Jarak ke Mekkah: <span id="distance">-</span> km
-</div>
-
-<button onclick="requestPermission()">Aktifkan Sensor</button>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 
 <script>
-/* =========================
-   KONFIGURASI KA'BAH
-========================= */
-const KAABA_LAT = 21.4225;
-const KAABA_LON = 39.8262;
+/* ============================
+   BASIC SCENE SETUP
+============================ */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x020617);
 
-/* =========================
-   VAR GLOBAL
-========================= */
-let userLat = null;
-let userLon = null;
-let heading = 0;
-let qibla = 0;
-let smoothRotation = 0;
-let sensorAvailable = false;
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(0,6,10);
 
-/* =========================
-   UTIL
-========================= */
-function toRad(d){ return d*Math.PI/180; }
-function toDeg(r){ return r*180/Math.PI; }
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
 
-function normalize(angle){
-    return (angle+360)%360;
-}
+/* ============================
+   LIGHTING REALISTIS
+============================ */
+const ambient = new THREE.AmbientLight(0xffffff,0.4);
+scene.add(ambient);
 
-/* =========================
-   HITUNG JARAK (HAVERSINE)
-========================= */
+const dirLight = new THREE.DirectionalLight(0xffffff,1);
+dirLight.position.set(5,10,7);
+dirLight.castShadow = true;
+scene.add(dirLight);
+
+/* ============================
+   COMPASS BASE (METAL)
+============================ */
+const baseGeo = new THREE.CylinderGeometry(5,5,0.8,64);
+const baseMat = new THREE.MeshStandardMaterial({
+    color:0x1e293b,
+    metalness:0.9,
+    roughness:0.3
+});
+const base = new THREE.Mesh(baseGeo,baseMat);
+base.receiveShadow = true;
+scene.add(base);
+
+/* ============================
+   NEEDLE 3D
+============================ */
+const needleGroup = new THREE.Group();
+
+const redMat = new THREE.MeshStandardMaterial({color:0xff0000, metalness:0.8, roughness:0.2});
+const whiteMat = new THREE.MeshStandardMaterial({color:0xffffff, metalness:0.7, roughness:0.3});
+
+const redNeedle = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3,0.3,4),
+    redMat
+);
+redNeedle.position.z = -2;
+
+const whiteNeedle = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3,0.3,4),
+    whiteMat
+);
+whiteNeedle.position.z = 2;
+
+needleGroup.add(redNeedle);
+needleGroup.add(whiteNeedle);
+
+/* ============================
+   KA'BAH 3D
+============================ */
+const kabahMat = new THREE.MeshStandardMaterial({
+    color:0x000000,
+    metalness:0.3,
+    roughness:0.8
+});
+const kabah = new THREE.Mesh(
+    new THREE.BoxGeometry(0.8,0.8,0.8),
+    kabahMat
+);
+kabah.position.z = -4.5;
+needleGroup.add(kabah);
+
+scene.add(needleGroup);
+
+/* ============================
+   GLOBE
+============================ */
+const globe = new THREE.Mesh(
+    new THREE.SphereGeometry(1.2,32,32),
+    new THREE.MeshStandardMaterial({
+        color:0x2563eb,
+        metalness:0.4,
+        roughness:0.6
+    })
+);
+globe.position.set(0,3,-3);
+scene.add(globe);
+
+/* ============================
+   QIBLA LOGIC
+============================ */
+const KAABA_LAT=21.4225;
+const KAABA_LON=39.8262;
+
+let heading=0;
+let qibla=0;
+let smoothRot=0;
+
+function toRad(d){return d*Math.PI/180;}
+function toDeg(r){return r*180/Math.PI;}
+
 function getDistance(lat1,lon1,lat2,lon2){
-    const R=6371;
-    const dLat=toRad(lat2-lat1);
-    const dLon=toRad(lon2-lon1);
-    const a=Math.sin(dLat/2)**2+
-            Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
-            Math.sin(dLon/2)**2;
-    return (R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
+ const R=6371;
+ const dLat=toRad(lat2-lat1);
+ const dLon=toRad(lon2-lon1);
+ const a=Math.sin(dLat/2)**2+
+ Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
+ Math.sin(dLon/2)**2;
+ return (R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 
-/* =========================
-   HITUNG ARAH KIBLAT
-========================= */
 function getQibla(lat,lon){
-    const dLon=toRad(KAABA_LON-lon);
-    const y=Math.sin(dLon);
-    const x=Math.cos(toRad(lat))*Math.tan(toRad(KAABA_LAT))
-            -Math.sin(toRad(lat))*Math.cos(dLon);
-    return normalize(toDeg(Math.atan2(y,x)));
+ const dLon=toRad(KAABA_LON-lon);
+ const y=Math.sin(dLon);
+ const x=Math.cos(toRad(lat))*Math.tan(toRad(KAABA_LAT))
+ -Math.sin(toRad(lat))*Math.cos(dLon);
+ return (toDeg(Math.atan2(y,x))+360)%360;
 }
 
-/* =========================
-   GPS AUTO LOAD
-========================= */
-function loadGPS(){
-    if(!navigator.geolocation){
-        document.getElementById("coord").textContent="GPS tidak didukung";
-        return;
-    }
+/* ============================
+   GPS
+============================ */
+navigator.geolocation.getCurrentPosition(pos=>{
+ let lat=pos.coords.latitude;
+ let lon=pos.coords.longitude;
 
-    navigator.geolocation.getCurrentPosition(
-        pos=>{
-            userLat=pos.coords.latitude;
-            userLon=pos.coords.longitude;
+ document.getElementById("coord").textContent=
+ lat.toFixed(5)+", "+lon.toFixed(5);
 
-            document.getElementById("coord").textContent=
-                userLat.toFixed(5)+", "+userLon.toFixed(5);
+ qibla=getQibla(lat,lon);
+ document.getElementById("degree").textContent=
+ qibla.toFixed(2);
 
-            qibla=getQibla(userLat,userLon);
-            document.getElementById("degree").textContent=
-                qibla.toFixed(2);
+ let dist=getDistance(lat,lon,KAABA_LAT,KAABA_LON);
+ document.getElementById("distance").textContent=
+ dist.toFixed(1);
 
-            let dist=getDistance(userLat,userLon,KAABA_LAT,KAABA_LON);
-            document.getElementById("distance").textContent=
-                dist.toFixed(1);
+});
 
-        },
-        err=>{
-            document.getElementById("coord").textContent=
-                "Aktifkan lokasi & HTTPS";
-        },
-        {enableHighAccuracy:true,timeout:10000}
-    );
-}
+/* ============================
+   SENSOR
+============================ */
+window.addEventListener("deviceorientation",e=>{
+ if(e.webkitCompassHeading){
+ heading=e.webkitCompassHeading;
+ }else{
+ heading=360-e.alpha;
+ }
+});
 
-/* =========================
-   SENSOR AUTO DETECT
-========================= */
-function initSensor(){
-
-    if(window.DeviceOrientationEvent){
-
-        window.addEventListener("deviceorientation",(e)=>{
-
-            if(e.webkitCompassHeading){ 
-                heading = e.webkitCompassHeading;
-            }
-            else if(e.alpha!=null){
-                heading = 360 - e.alpha;
-            }
-
-            heading = normalize(heading);
-            sensorAvailable = true;
-
-        },true);
-    }
-}
-
-/* =========================
-   ANIMASI SUPER HALUS
-========================= */
+/* ============================
+   ANIMATION LOOP
+============================ */
 function animate(){
+ requestAnimationFrame(animate);
 
-    let target = normalize(qibla - heading);
+ let target=(qibla-heading);
+ smoothRot+= (target-smoothRot)*0.05;
 
-    let diff = target - smoothRotation;
+ needleGroup.rotation.y=toRad(smoothRot);
 
-    if(diff > 180) diff -= 360;
-    if(diff < -180) diff += 360;
+ globe.rotation.y+=0.003;
 
-    smoothRotation += diff * 0.05; // semakin kecil semakin halus
+ document.getElementById("diff").textContent=
+ Math.abs(target).toFixed(1);
 
-    document.getElementById("needle").style.transform=
-        `translate(-50%,-100%) rotate(${smoothRotation}deg)`;
-
-    document.getElementById("diff").textContent=
-        Math.abs(diff).toFixed(2);
-
-    requestAnimationFrame(animate);
+ renderer.render(scene,camera);
 }
-
-/* =========================
-   START SYSTEM
-========================= */
-loadGPS();
-initSensor();
 animate();
 
-/* =========================
-   ANTI ERROR VISIBILITY
-========================= */
-window.onerror=function(){
-    console.log("Error ditangani");
-    return true;
-};
-</script>
-
-<script>
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js');
-}
+/* ============================
+   RESPONSIVE
+============================ */
+window.addEventListener("resize",()=>{
+ camera.aspect=innerWidth/innerHeight;
+ camera.updateProjectionMatrix();
+ renderer.setSize(innerWidth,innerHeight);
+});
 </script>
 
 </body>
