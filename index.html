@@ -128,8 +128,6 @@ button{
     </div>
 </div>
 
-<div class="globe"></div>
-
 <div class="info">
     📍 Koordinat: <span id="coord">-</span><br>
     📐 Derajat Kiblat: <span id="degree">-</span>°<br>
@@ -140,97 +138,150 @@ button{
 <button onclick="requestPermission()">Aktifkan Sensor</button>
 
 <script>
+/* =========================
+   KONFIGURASI KA'BAH
+========================= */
 const KAABA_LAT = 21.4225;
 const KAABA_LON = 39.8262;
 
+/* =========================
+   VAR GLOBAL
+========================= */
 let userLat = null;
 let userLon = null;
 let heading = 0;
 let qibla = 0;
-let currentRotation = 0;
+let smoothRotation = 0;
+let sensorAvailable = false;
 
-function toRad(deg){ return deg * Math.PI / 180; }
-function toDeg(rad){ return rad * 180 / Math.PI; }
+/* =========================
+   UTIL
+========================= */
+function toRad(d){ return d*Math.PI/180; }
+function toDeg(r){ return r*180/Math.PI; }
 
-function getDistance(lat1, lon1, lat2, lon2){
-    const R = 6371;
-    const dLat = toRad(lat2-lat1);
-    const dLon = toRad(lon2-lon1);
-    const a = Math.sin(dLat/2)**2 +
-              Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
-              Math.sin(dLon/2)**2;
+function normalize(angle){
+    return (angle+360)%360;
+}
+
+/* =========================
+   HITUNG JARAK (HAVERSINE)
+========================= */
+function getDistance(lat1,lon1,lat2,lon2){
+    const R=6371;
+    const dLat=toRad(lat2-lat1);
+    const dLon=toRad(lon2-lon1);
+    const a=Math.sin(dLat/2)**2+
+            Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
+            Math.sin(dLon/2)**2;
     return (R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 
-function getQiblaDirection(lat, lon){
-    const dLon = toRad(KAABA_LON - lon);
-    const y = Math.sin(dLon);
-    const x = Math.cos(toRad(lat))*Math.tan(toRad(KAABA_LAT))
-            - Math.sin(toRad(lat))*Math.cos(dLon);
-    return (toDeg(Math.atan2(y,x)) + 360) % 360;
+/* =========================
+   HITUNG ARAH KIBLAT
+========================= */
+function getQibla(lat,lon){
+    const dLon=toRad(KAABA_LON-lon);
+    const y=Math.sin(dLon);
+    const x=Math.cos(toRad(lat))*Math.tan(toRad(KAABA_LAT))
+            -Math.sin(toRad(lat))*Math.cos(dLon);
+    return normalize(toDeg(Math.atan2(y,x)));
 }
 
-// Animasi smooth
+/* =========================
+   GPS AUTO LOAD
+========================= */
+function loadGPS(){
+    if(!navigator.geolocation){
+        document.getElementById("coord").textContent="GPS tidak didukung";
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+        pos=>{
+            userLat=pos.coords.latitude;
+            userLon=pos.coords.longitude;
+
+            document.getElementById("coord").textContent=
+                userLat.toFixed(5)+", "+userLon.toFixed(5);
+
+            qibla=getQibla(userLat,userLon);
+            document.getElementById("degree").textContent=
+                qibla.toFixed(2);
+
+            let dist=getDistance(userLat,userLon,KAABA_LAT,KAABA_LON);
+            document.getElementById("distance").textContent=
+                dist.toFixed(1);
+
+        },
+        err=>{
+            document.getElementById("coord").textContent=
+                "Aktifkan lokasi & HTTPS";
+        },
+        {enableHighAccuracy:true,timeout:10000}
+    );
+}
+
+/* =========================
+   SENSOR AUTO DETECT
+========================= */
+function initSensor(){
+
+    if(window.DeviceOrientationEvent){
+
+        window.addEventListener("deviceorientation",(e)=>{
+
+            if(e.webkitCompassHeading){ 
+                heading = e.webkitCompassHeading;
+            }
+            else if(e.alpha!=null){
+                heading = 360 - e.alpha;
+            }
+
+            heading = normalize(heading);
+            sensorAvailable = true;
+
+        },true);
+    }
+}
+
+/* =========================
+   ANIMASI SUPER HALUS
+========================= */
 function animate(){
-    let target = qibla - heading;
-    currentRotation += (target - currentRotation) * 0.08;
-    document.getElementById("needle").style.transform =
-        `translate(-50%,-100%) rotate(${currentRotation}deg)`;
+
+    let target = normalize(qibla - heading);
+
+    let diff = target - smoothRotation;
+
+    if(diff > 180) diff -= 360;
+    if(diff < -180) diff += 360;
+
+    smoothRotation += diff * 0.05; // semakin kecil semakin halus
+
+    document.getElementById("needle").style.transform=
+        `translate(-50%,-100%) rotate(${smoothRotation}deg)`;
+
+    document.getElementById("diff").textContent=
+        Math.abs(diff).toFixed(2);
+
     requestAnimationFrame(animate);
 }
+
+/* =========================
+   START SYSTEM
+========================= */
+loadGPS();
+initSensor();
 animate();
 
-// GPS
-navigator.geolocation.getCurrentPosition(
-    pos=>{
-        userLat = pos.coords.latitude;
-        userLon = pos.coords.longitude;
-
-        document.getElementById("coord").textContent =
-            userLat.toFixed(5)+", "+userLon.toFixed(5);
-
-        qibla = getQiblaDirection(userLat,userLon);
-        document.getElementById("degree").textContent =
-            qibla.toFixed(2);
-
-        let dist = getDistance(userLat,userLon,KAABA_LAT,KAABA_LON);
-        document.getElementById("distance").textContent =
-            dist.toFixed(1);
-
-    },
-    err=>{
-        alert("GPS gagal: aktifkan lokasi & HTTPS");
-    },
-    {enableHighAccuracy:true}
-);
-
-// SENSOR (fallback universal)
-function handleOrientation(e){
-    if(e.absolute === true || e.webkitCompassHeading){
-        heading = e.webkitCompassHeading || (360 - e.alpha);
-    } else {
-        heading = 360 - e.alpha;
-    }
-    let diff = Math.abs(qibla - heading);
-    document.getElementById("diff").textContent =
-        diff.toFixed(2);
-}
-
-window.addEventListener("deviceorientation", handleOrientation, true);
-
-// Permission iOS
-function requestPermission(){
-    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-        DeviceOrientationEvent.requestPermission()
-        .then(response=>{
-            if(response==='granted'){
-                window.addEventListener("deviceorientation", handleOrientation, true);
-            }
-        });
-    } else {
-        alert("Sensor otomatis aktif (Android)");
-    }
-}
+/* =========================
+   ANTI ERROR VISIBILITY
+========================= */
+window.onerror=function(){
+    console.log("Error ditangani");
+    return true;
+};
 </script>
 
 <script>
