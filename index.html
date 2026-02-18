@@ -143,7 +143,10 @@ button{
 const KAABA_LAT = 21.4225;
 const KAABA_LON = 39.8262;
 
-let userLat, userLon;
+let userLat = null;
+let userLon = null;
+let heading = 0;
+let qibla = 0;
 let currentRotation = 0;
 
 function toRad(deg){ return deg * Math.PI / 180; }
@@ -156,7 +159,7 @@ function getDistance(lat1, lon1, lat2, lon2){
     const a = Math.sin(dLat/2)**2 +
               Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
               Math.sin(dLon/2)**2;
-    return (R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a))).toFixed(1);
+    return (R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 
 function getQiblaDirection(lat, lon){
@@ -167,44 +170,65 @@ function getQiblaDirection(lat, lon){
     return (toDeg(Math.atan2(y,x)) + 360) % 360;
 }
 
-function smoothRotate(target){
-    currentRotation += (target - currentRotation)*0.1;
+// Animasi smooth
+function animate(){
+    let target = qibla - heading;
+    currentRotation += (target - currentRotation) * 0.08;
     document.getElementById("needle").style.transform =
         `translate(-50%,-100%) rotate(${currentRotation}deg)`;
-    requestAnimationFrame(()=>smoothRotate(target));
+    requestAnimationFrame(animate);
+}
+animate();
+
+// GPS
+navigator.geolocation.getCurrentPosition(
+    pos=>{
+        userLat = pos.coords.latitude;
+        userLon = pos.coords.longitude;
+
+        document.getElementById("coord").textContent =
+            userLat.toFixed(5)+", "+userLon.toFixed(5);
+
+        qibla = getQiblaDirection(userLat,userLon);
+        document.getElementById("degree").textContent =
+            qibla.toFixed(2);
+
+        let dist = getDistance(userLat,userLon,KAABA_LAT,KAABA_LON);
+        document.getElementById("distance").textContent =
+            dist.toFixed(1);
+
+    },
+    err=>{
+        alert("GPS gagal: aktifkan lokasi & HTTPS");
+    },
+    {enableHighAccuracy:true}
+);
+
+// SENSOR (fallback universal)
+function handleOrientation(e){
+    if(e.absolute === true || e.webkitCompassHeading){
+        heading = e.webkitCompassHeading || (360 - e.alpha);
+    } else {
+        heading = 360 - e.alpha;
+    }
+    let diff = Math.abs(qibla - heading);
+    document.getElementById("diff").textContent =
+        diff.toFixed(2);
 }
 
-navigator.geolocation.getCurrentPosition(pos=>{
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
+window.addEventListener("deviceorientation", handleOrientation, true);
 
-    document.getElementById("coord").textContent =
-        userLat.toFixed(5)+", "+userLon.toFixed(5);
-
-    const dist = getDistance(userLat,userLon,KAABA_LAT,KAABA_LON);
-    document.getElementById("distance").textContent = dist;
-
-    const qibla = getQiblaDirection(userLat,userLon);
-    document.getElementById("degree").textContent = qibla.toFixed(2);
-
-    window.addEventListener("deviceorientationabsolute", e=>{
-        let heading = e.alpha;
-        if(heading==null) return;
-        let target = qibla - heading;
-        document.getElementById("diff").textContent =
-            Math.abs(target).toFixed(2);
-        smoothRotate(target);
-    });
-
-});
-
+// Permission iOS
 function requestPermission(){
     if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-        DeviceOrientationEvent.requestPermission().then(response => {
-            if (response === 'granted') {
-                alert("Sensor aktif");
+        DeviceOrientationEvent.requestPermission()
+        .then(response=>{
+            if(response==='granted'){
+                window.addEventListener("deviceorientation", handleOrientation, true);
             }
         });
+    } else {
+        alert("Sensor otomatis aktif (Android)");
     }
 }
 </script>
